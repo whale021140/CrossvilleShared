@@ -51,9 +51,10 @@ export default {
       if (request.method === 'GET' && url.pathname === '/healthz') return json(200, { status: 'ok', mode: 'hosted_team' });
       if (request.method === 'GET' && url.pathname === '/api/workspace') return json(200, await team.workspace(url.searchParams.get('projectId')));
       if (request.method === 'GET' && url.pathname === '/api/team') return json(200, await team.team(url.searchParams.get('projectId')));
+      if (request.method === 'GET' && url.pathname === '/api/gateway/credentials') return json(200, await team.gatewayCredentials(url.searchParams.get('projectId')));
       if (request.method === 'GET' && url.pathname.startsWith('/api/invitations/')) return json(200, await team.invitation(url.pathname.split('/').at(-1)));
       if (request.method === 'GET' && url.pathname === '/api/connection') return json(200, {
-        hosted: true, sharedBackend: true, endpoint: `${url.origin}/mcp`, repositoryUrl: 'https://github.com/kartika6/CrossvilleShared/tree/feature/team-collaboration',
+        hosted: true, sharedBackend: true, endpoint: `${url.origin}/mcp`, gatewayEndpoint: /^https:\/\/[^\s]+\/mcp$/.test(env.GATEWAY_URL || '') ? env.GATEWAY_URL : null, repositoryUrl: 'https://github.com/kartika6/CrossvilleShared/tree/feature/team-collaboration',
         message: 'Install the CrossvilleShared personal plugin created by Sites. Its tools use the same hosted projects and membership as this page. Your LLM retrieves context directly; copy and download are optional.'
       });
       if (request.method !== 'POST') return json(404, { error: 'This page was not found.', code: 'NOT_FOUND' });
@@ -64,7 +65,8 @@ export default {
       const actions = {
         '/api/projects/create': () => team.create(body), '/api/projects/select': () => team.select(projectId),
         '/api/team/invite': () => team.invite(projectId, body), '/api/team/revoke': () => team.revoke(projectId, body.invitationId),
-        '/api/team/member': () => team.changeMember(projectId, body), '/api/invitations/accept': () => team.accept(body.invitationId)
+        '/api/team/member': () => team.changeMember(projectId, body), '/api/invitations/accept': () => team.accept(body.invitationId),
+        '/api/gateway/credentials': () => team.issueGatewayCredential(projectId), '/api/gateway/revoke': () => team.revokeGatewayCredential(body.credentialId)
       };
       const serviceActions = {
         '/api/handoffs': service => service.prepareHandoff(body), '/api/handoffs/confirm': service => service.confirmHandoff(body), '/api/handoffs/cancel': service => service.cancelHandoff(body),

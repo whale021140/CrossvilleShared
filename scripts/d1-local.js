@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 export function localD1(path = ':memory:') {
   const database = new DatabaseSync(path);
   database.exec('CREATE TABLE IF NOT EXISTS _qa_migrations (name TEXT PRIMARY KEY)');
-  for (const name of ['0000_workspace', '0001_collaboration']) {
+  for (const name of ['0000_workspace', '0001_collaboration', '0002_gateway_credentials']) {
     if (!database.prepare('SELECT name FROM _qa_migrations WHERE name = ?').get(name)) {
       database.exec(readFileSync(new URL(`../drizzle/${name}.sql`, import.meta.url), 'utf8'));
       database.prepare('INSERT INTO _qa_migrations (name) VALUES (?)').run(name);

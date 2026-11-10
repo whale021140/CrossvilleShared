@@ -39,6 +39,18 @@ test('hosted identity, isolated project creation and per-user CSRF', async t => 
   assert.equal((await ok('owner', '/api/workspace')).project.id, projectId);
 });
 
+test('members can issue and revoke their own project-scoped gateway credentials', async t => {
+  const { ok, send, join, projectId, database } = await setup(t);
+  await join('editor', 'editor');
+  assert.equal((await send('outsider', '/api/gateway/credentials', { projectId })).status, 404);
+  const issued = await ok('editor', '/api/gateway/credentials', { projectId });
+  assert.match(issued.token, /^cv_[a-f0-9]{64}$/);
+  assert.equal(database.prepare('SELECT token_hash FROM cv_gateway_credentials WHERE id = ?').get(issued.id).token_hash.includes(issued.token), false);
+  assert.equal((await send('outsider', '/api/gateway/revoke', { credentialId: issued.id })).status, 404);
+  await ok('editor', '/api/gateway/revoke', { credentialId: issued.id });
+  assert.ok(database.prepare('SELECT revoked_at FROM cv_gateway_credentials WHERE id = ?').get(issued.id).revoked_at);
+});
+
 test('invitation email binding, roles, expiry, revoke and repeat acceptance', async t => {
   const { send, ok, join, projectId, database } = await setup(t);
   const invitation = await ok('owner', '/api/team/invite', { projectId, email: accounts.editor.email, role: 'editor' });

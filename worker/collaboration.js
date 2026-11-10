@@ -1,4 +1,4 @@
-import { AppError, currentItems, id, text } from '../src/domain.js';
+import { AppError, currentItems, digest, id, text } from '../src/domain.js';
 import { createFixture } from '../src/fixture.js';
 import { ContextService } from '../src/service.js';
 import { MemoryStore } from '../src/memory-store.js';
@@ -49,6 +49,26 @@ export class Collaboration {
     await this.membership(projectId); await this.settings();
     await this.sql('UPDATE cv_user_settings SET active_project_id = ? WHERE user_id = ?', projectId, this.actor.id).run();
     return { projectId };
+  }
+  async issueGatewayCredential(projectId) {
+    await this.membership(projectId);
+    const bytes = crypto.getRandomValues(new Uint8Array(32));
+    const token = 'cv_' + Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+    const credentialId = id(), createdAt = now(), expiresAt = new Date(Date.now() + 30 * 86400000).toISOString();
+    const result = await this.sql(`INSERT INTO cv_gateway_credentials (id, user_id, project_id, token_hash, created_at, expires_at)
+      SELECT ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM cv_members WHERE user_id = ? AND project_id = ?)`, credentialId, this.actor.id, projectId, digest(token), createdAt, expiresAt, this.actor.id, projectId).run();
+    if (!result.meta.changes) fail();
+    return { id: credentialId, token, projectId, expiresAt };
+  }
+  async revokeGatewayCredential(credentialId) {
+    const result = await this.sql('UPDATE cv_gateway_credentials SET revoked_at = ? WHERE id = ? AND user_id = ? AND revoked_at IS NULL', now(), credentialId, this.actor.id).run();
+    if (!result.meta.changes) fail();
+    return { revoked: true };
+  }
+  async gatewayCredentials(projectId) {
+    await this.membership(projectId);
+    const result = await this.sql('SELECT id, project_id AS projectId, created_at AS createdAt, expires_at AS expiresAt, revoked_at AS revokedAt FROM cv_gateway_credentials WHERE project_id = ? AND user_id = ? ORDER BY created_at DESC', projectId, this.actor.id).all();
+    return { credentials: result.results };
   }
   async create({ name, goal, sample = false }) {
     verifiedEmail(this.actor); name = text(name, 'Project name', 100); goal = text(goal, 'Project goal', 4000);
@@ -150,6 +170,7 @@ export class Collaboration {
     const results = await this.db.batch([
       this.sql(`UPDATE cv_projects SET access_revision = access_revision + 1 WHERE id = ? AND ${ownerGuard}`, projectId, projectId, this.actor.id),
       ...(remove ? [this.sql(`UPDATE cv_invitations SET revoked_at = ? WHERE project_id = ? AND accepted_by IS NULL AND revoked_at IS NULL AND email = (SELECT email FROM cv_members WHERE project_id = ? AND user_id = ?) AND ${ownerGuard}`, now(), projectId, projectId, memberId, projectId, this.actor.id)] : []),
+      ...(remove ? [this.sql(`UPDATE cv_gateway_credentials SET revoked_at = ? WHERE project_id = ? AND user_id = ? AND revoked_at IS NULL AND ${ownerGuard} AND EXISTS (SELECT 1 FROM cv_members target WHERE target.project_id = ? AND target.user_id = ? AND (target.role <> 'owner' OR (SELECT COUNT(*) FROM cv_members owners WHERE owners.project_id = ? AND owners.role = 'owner') > 1))`, now(), projectId, memberId, projectId, this.actor.id, projectId, memberId, projectId)] : []),
       this.sql(query, ...args)
     ]);
     if (results.at(-1).meta.changes !== 1) throw new AppError('Keep at least one owner. The member may also have changed; refresh and try again.', 'MEMBER_CHANGE_CONFLICT', 409);

@@ -21,7 +21,7 @@ const server = createServer(async (req, res) => {
     const headers = new Headers(req.headers);
     headers.set('oai-authenticated-user-id', who); headers.set('oai-authenticated-user-email', actor[1]); headers.set('oai-authenticated-user-full-name', actor[0]);
     const request = new Request(url, { method: req.method, headers, ...(['GET', 'HEAD'].includes(req.method) ? {} : { body: Buffer.concat(chunks) }) });
-    const response = await worker.fetch(request, { DB: db.DB });
+    const response = await worker.fetch(request, { DB: db.DB, ...(process.env.CROSSVILLE_QA_GATEWAY ? { GATEWAY_URL: 'https://gateway.example.test/mcp' } : {}) });
     const responseHeaders = Object.fromEntries(response.headers);
     let body = Buffer.from(await response.arrayBuffer());
     if (response.headers.get('Content-Type')?.startsWith('text/html')) {
